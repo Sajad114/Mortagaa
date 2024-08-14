@@ -1,0 +1,411 @@
+<!DOCTYPE html>
+<html lang="ar">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>نظام إدارة الطلبات</title>
+    <link rel="stylesheet" href="https://cdn.datatables.net/1.11.3/css/jquery.dataTables.min.css">
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background-color: #f4f4f4;
+            direction: rtl;
+            text-align: right;
+        }
+        .container {
+            max-width: 800px;
+            margin: auto;
+            padding: 20px;
+            background-color: white;
+            border-radius: 8px;
+            box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+            overflow-x: auto;
+        }
+        h1 {
+            text-align: center;
+        }
+        .btn {
+            display: inline-block;
+            margin: 10px 0;
+            padding: 10px 20px;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+        }
+        .btn-blue {
+            background-color: #007bff;
+        }
+        .btn-green {
+            background-color: #28a745;
+        }
+        .btn-red {
+            background-color: #dc3545;
+        }
+        .btn-yellow {
+            background-color: #ffc107;
+        }
+        .btn-blue:hover {
+            background-color: #0056b3;
+        }
+        .btn-green:hover {
+            background-color: #218838;
+        }
+        .btn-red:hover {
+            background-color: #c82333;
+        }
+        .btn-yellow:hover {
+            background-color: #e0a800;
+        }
+        .modal, .barcode-modal {
+            display: none;
+            position: fixed;
+            z-index: 1;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            overflow: auto;
+            background-color: rgba(0, 0, 0, 0.4);
+        }
+        .modal-content, .barcode-modal-content {
+            background-color: #fefefe;
+            margin: 15% auto;
+            padding: 20px;
+            border: 1px solid #888;
+            width: 80%;
+            max-width: 500px;
+            border-radius: 8px;
+        }
+        .close {
+            color: #aaa;
+            float: left;
+            font-size: 28px;
+            font-weight: bold;
+        }
+        .close:hover,
+        .close:focus {
+            color: black;
+            text-decoration: none;
+            cursor: pointer;
+        }
+        .form-group {
+            margin-bottom: 15px;
+        }
+        .form-group label {
+            display: block;
+            margin-bottom: 5px;
+        }
+        .form-group input, .form-group select {
+            width: 100%;
+            padding: 8px;
+            box-sizing: border-box;
+        }
+        .form-group input[type="number"] {
+            -moz-appearance: textfield;
+        }
+        .form-group input[type="number"]::-webkit-outer-spin-button,
+        .form-group input[type="number"]::-webkit-inner-spin-button {
+            -webkit-appearance: none;
+            margin: 0;
+        }
+        video {
+            width: 100%;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>نظام إدارة الطلبات</h1>
+        <button class="btn btn-blue" id="openModal">إضافة طلب</button>
+        <table id="ordersTable" class="display">
+            <thead>
+                <tr>
+                    <th>رقم الطلب</th>
+                    <th>المبلغ (دينار عراقي)</th>
+                    <th>شركة النقل</th>
+                    <th>الإجراءات</th>
+                </tr>
+            </thead>
+            <tbody>
+            </tbody>
+        </table>
+    </div>
+
+    <div id="orderModal" class="modal">
+        <div class="modal-content">
+            <span class="close">&times;</span>
+            <h2>إضافة طلب</h2>
+            <form id="orderForm">
+                <div class="form-group">
+                    <label for="orderNumber">رقم الطلب</label>
+                    <div style="display: flex; gap: 10px;">
+                        <input type="number" id="orderNumber" required inputmode="numeric">
+                        <button type="button" class="btn btn-yellow" id="scanOrderNumber">ماسح باركود</button>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label for="phoneNumber">رقم الهاتف</label>
+                    <input type="number" id="phoneNumber" required inputmode="numeric" maxlength="11">
+                </div>
+                <div class="form-group">
+                    <label for="orderAmount">مبلغ الطلب (دينار عراقي)</label>
+                    <input type="number" id="orderAmount" required inputmode="numeric">
+                </div>
+                <div class="form-group">
+                    <label for="returnReason">سبب الإرجاع</label>
+                    <input type="text" id="returnReason">
+                </div>
+                <div class="form-group">
+                    <label for="transportCompany">شركة النقل</label>
+                    <select id="transportCompany" required>
+                        <option value="الخبير">الخبير</option>
+                        <option value="MA">MA</option>
+                    </select>
+                </div>
+                <button type="submit" class="btn btn-green">حفظ الطلب</button>
+            </form>
+        </div>
+    </div>
+
+    <div id="barcodeModal" class="barcode-modal">
+        <div class="barcode-modal-content">
+            <span class="close-barcode">&times;</span>
+            <h2>مسح الباركود</h2>
+            <video id="video" autoplay></video>
+        </div>
+    </div>
+
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <script src="https://cdn.datatables.net/1.11.3/js/jquery.dataTables.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@zxing/library@0.18.5/umd/index.min.js"></script>
+    <script>
+        const dbPromise = indexedDB.open("ordersDB", 1);
+
+        dbPromise.onupgradeneeded = function(event) {
+            const db = event.target.result;
+            const objectStore = db.createObjectStore("orders", { keyPath: "orderNumber" });
+            objectStore.createIndex("phoneNumber", "phoneNumber", { unique: false });
+        };
+
+        dbPromise.onerror = function(event) {
+            console.error("Database error: " + event.target.errorCode);
+        };
+
+        function addOrderToDB(order) {
+            const dbRequest = indexedDB.open("ordersDB", 1);
+            dbRequest.onsuccess = function(event) {
+                const db = event.target.result;
+                const transaction = db.transaction(["orders"], "readwrite");
+                const objectStore = transaction.objectStore("orders");
+                const request = objectStore.add(order);
+                request.onsuccess = function(event) {
+                    console.log("Order added to the database.");
+                    loadOrders();
+                };
+                request.onerror = function(event) {
+                    console.error("Unable to add order to the database: ", event.target.error);
+                };
+            };
+        }
+
+        function loadOrders() {
+            const dbRequest = indexedDB.open("ordersDB", 1);
+            dbRequest.onsuccess = function(event) {
+                const db = event.target.result;
+                const transaction = db.transaction(["orders"], "readonly");
+                const objectStore = transaction.objectStore("orders");
+                const request = objectStore.getAll();
+                request.onsuccess = function(event) {
+                    const orders = event.target.result;
+                    const table = $('#ordersTable').DataTable();
+                    table.clear().draw();
+                    orders.forEach(order => {
+                        table.row.add([
+                            order.orderNumber,
+                            order.orderAmount.toLocaleString() + ' د.ع',
+                            order.transportCompany,
+                            `<button class="btn btn-red" onclick="deleteOrder(${order.orderNumber})">حذف</button>
+                             <button class="btn btn-blue" onclick="editOrder(${order.orderNumber})">تعديل</button>
+                             <button class="btn btn-green" onclick="viewDetails(${order.orderNumber})">عرض التفاصيل</button>`
+                        ]).draw();
+                    });
+                };
+            };
+        }
+
+        function deleteOrder(orderNumber) {
+            const dbRequest = indexedDB.open("ordersDB", 1);
+            dbRequest.onsuccess = function(event) {
+                const db = event.target.result;
+                const transaction = db.transaction(["orders"], "readwrite");
+                const objectStore = transaction.objectStore("orders");
+                const request = objectStore.delete(orderNumber);
+                request.onsuccess = function(event) {
+                    console.log("Order deleted from the database.");
+                    loadOrders();
+                };
+                request.onerror = function(event) {
+                    console.error("Unable to deleteorder from the database: ", event.target.error);
+                                                  };
+                                              };
+                                          }
+
+                                          function editOrder(orderNumber) {
+                                              const dbRequest = indexedDB.open("ordersDB", 1);
+                                              dbRequest.onsuccess = function(event) {
+                                                  const db = event.target.result;
+                                                  const transaction = db.transaction(["orders"], "readonly");
+                                                  const objectStore = transaction.objectStore("orders");
+                                                  const request = objectStore.get(orderNumber);
+                                                  request.onsuccess = function(event) {
+                                                      const order = event.target.result;
+                                                      document.getElementById('orderNumber').value = order.orderNumber;
+                                                      document.getElementById('phoneNumber').value = order.phoneNumber;
+                                                      document.getElementById('orderAmount').value = order.orderAmount;
+                                                      document.getElementById('returnReason').value = order.returnReason;
+                                                      document.getElementById('transportCompany').value = order.transportCompany;
+                                                      document.getElementById('orderNumber').disabled = true;
+                                                      document.getElementById('openModal').click();
+                                                  };
+                                              };
+                                          }
+
+                                          function viewDetails(orderNumber) {
+                                              const dbRequest = indexedDB.open("ordersDB", 1);
+                                              dbRequest.onsuccess = function(event) {
+                                                  const db = event.target.result;
+                                                  const transaction = db.transaction(["orders"], "readonly");
+                                                  const objectStore = transaction.objectStore("orders");
+                                                  const request = objectStore.get(orderNumber);
+                                                  request.onsuccess = function(event) {
+                                                      const order = event.target.result;
+                                                      alert(`رقم الطلب: ${order.orderNumber}\nرقم الهاتف: ${order.phoneNumber}\nمبلغ الطلب: ${order.orderAmount.toLocaleString()} د.ع\nسبب الإرجاع: ${order.returnReason}\nشركة النقل: ${order.transportCompany}`);
+                                                  };
+                                              };
+                                          }
+
+                                          $(document).ready(function() {
+                                              const modal = document.getElementById('orderModal');
+                                              const btn = document.getElementById('openModal');
+                                              const span = document.getElementsByClassName('close')[0];
+
+                                              btn.onclick = function() {
+                                                  modal.style.display = "block";
+                                              }
+
+                                              span.onclick = function() {
+                                                  modal.style.display = "none";
+                                                  document.getElementById('orderForm').reset();
+                                                  document.getElementById('orderNumber').disabled = false;
+                                              }
+
+                                              window.onclick = function(event) {
+                                                  if (event.target == modal) {
+                                                      modal.style.display = "none";
+                                                      document.getElementById('orderForm').reset();
+                                                      document.getElementById('orderNumber').disabled = false;
+                                                  }
+                                              }
+
+                                              $('#ordersTable').DataTable({
+                                                  "language": {
+                                                      "url": "//cdn.datatables.net/plug-ins/1.10.24/i18n/Arabic.json"
+                                                  },
+                                                  "responsive": true
+                                              });
+
+                                              loadOrders();
+
+                                              $('#orderForm').on('submit', function(event) {
+                                                  event.preventDefault();
+
+                                                  const orderNumber = document.getElementById('orderNumber').value;
+                                                  const phoneNumber = document.getElementById('phoneNumber').value;
+                                                  const orderAmount = document.getElementById('orderAmount').value;
+                                                  const returnReason = document.getElementById('returnReason').value;
+                                                  const transportCompany = document.getElementById('transportCompany').value;
+
+                                                  const order = {
+                                                      orderNumber: parseInt(orderNumber),
+                                                      phoneNumber: parseInt(phoneNumber),
+                                                      orderAmount: parseInt(orderAmount),
+                                                      returnReason: returnReason,
+                                                      transportCompany: transportCompany
+                                                  };
+
+                                                  if (document.getElementById('orderNumber').disabled) {
+                                                      updateOrderInDB(order);
+                                                  } else {
+                                                      addOrderToDB(order);
+                                                  }
+
+                                                  modal.style.display = "none";
+                                                  document.getElementById('orderForm').reset();
+                                                  document.getElementById('orderNumber').disabled = false;
+                                              });
+
+                                              const codeReader = new ZXing.BrowserBarcodeReader();
+                                              const audio = new Audio('/mnt/data/beep-08b.mp3'); // تم تحديد ملف الصوت
+
+                                              $('#scanOrderNumber').on('click', function() {
+                                                  const barcodeModal = document.getElementById('barcodeModal');
+                                                  const spanBarcode = document.getElementsByClassName('close-barcode')[0];
+                                                  barcodeModal.style.display = "block";
+
+                                                  spanBarcode.onclick = function() {
+                                                      barcodeModal.style.display = "none";
+                                                      codeReader.reset();
+                                                  }
+
+                                                  window.onclick = function(event) {
+                                                      if (event.target == barcodeModal) {
+                                                          barcodeModal.style.display = "none";
+                                                          codeReader.reset();
+                                                      }
+                                                  }
+
+                                                  codeReader.getVideoInputDevices().then((videoInputDevices) => {
+                                                      const selectedDeviceId = videoInputDevices[0].deviceId;
+                                                      codeReader.decodeOnceFromVideoDevice(selectedDeviceId, 'video').then((result) => {
+                                                          document.getElementById('orderNumber').value = result.text;
+                                                          audio.play(); // تشغيل الصوت عند مسح الباركود
+                                                          barcodeModal.style.display = "none";
+                                                          codeReader.reset();
+                                                      }).catch((err) => {
+                                                          console.error(err);
+                                                      });
+                                                  }).catch((err) => {
+                                                      console.error(err);
+                                                  });
+                                              });
+
+                                              document.getElementById('phoneNumber').addEventListener('input', function() {
+                                                  if (this.value.length > 11) {
+                                                      this.value = this.value.slice(0, 11);
+                                                  }
+                                              });
+
+                                          });
+
+                                          function updateOrderInDB(order) {
+                                              const dbRequest = indexedDB.open("ordersDB", 1);
+                                              dbRequest.onsuccess = function(event) {
+                                                  const db = event.target.result;
+                                                  const transaction = db.transaction(["orders"], "readwrite");
+                                                  const objectStore = transaction.objectStore("orders");
+                                                  const request = objectStore.put(order);
+                                                  request.onsuccess = function(event) {
+                                                      console.log("Order updated in the database.");
+                                                      loadOrders();
+                                                  };
+                                                  request.onerror = function(event) {
+                                                      console.error("Unable to update order in the database: ", event.target.error);
+                                                  };
+                                              };
+                                          }
+                                      </script>
+                                  </body>
+                                  </html>
